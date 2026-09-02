@@ -2,11 +2,14 @@ import "server-only";
 
 import { getChallengeSettings } from "@/lib/challenge/config";
 import { challengePhase } from "@/lib/challenge/dates";
+import { rewindBaselineToChallengeStart } from "@/lib/challenge/progress";
+import { tallyDifficulties } from "@/lib/challenge/scoring";
+import type { Baseline } from "@/lib/challenge/types";
 import { prisma } from "@/lib/db";
 import { getLeetCodeProvider, isLeetCodeProviderError } from "@/lib/leetcode";
 import { profileUrlFor } from "@/lib/leetcode/types";
 
-import { syncStudentAndRerank } from "./sync";
+import { resolveDifficulties, syncStudentAndRerank } from "./sync";
 
 /**
  * Registration.
@@ -90,6 +93,43 @@ export async function registerStudent(input: RegistrationInput): Promise<Registr
   // which is what stops August practice from counting towards a September score.
   const lockBaseline = phase !== "BEFORE";
 
+  // Anyone joining after the challenge opened has probably already solved something
+  // inside the window. Taking their current lifetime count as the baseline would bury
+  // that work, so rewind the baseline past whatever in-window solves we can still see.
+  const lifetime = {
+    total: profile.totalSolved,
+    easy: profile.easySolved,
+    medium: profile.mediumSolved,
+    hard: profile.hardSolved,
+  };
+
+  let baseline: Baseline = lifetime;
+
+  if (phase === "ACTIVE") {
+    try {
+      const recent = await provider.getSolvedProblems(requestedUsername);
+      const alreadySolved = recent.filter(
+        (item) =>
+          item.solvedAt.getTime() >= settings.startDate.getTime() &&
+          item.solvedAt.getTime() <= Math.min(settings.endDate.getTime(), now.getTime()),
+      );
+
+      // Deduplicate by slug: the same problem submitted twice is still one problem.
+      const bySlug = new Map(alreadySolved.map((item) => [item.problemSlug, item]));
+      const difficulties = await resolveDifficulties([...bySlug.keys()], provider);
+      const credit = tallyDifficulties(
+        [...bySlug.keys()].map((slug) => difficulties.get(slug)?.difficulty ?? null),
+      );
+
+      baseline = rewindBaselineToChallengeStart(lifetime, credit);
+    } catch {
+      // If the recent-solves feed is unavailable we fall back to the plain baseline.
+      // That under-credits rather than over-credits, and the student can be corrected
+      // by an admin; inventing a number here would be worse.
+      baseline = lifetime;
+    }
+  }
+
   try {
     const student = await prisma.$transaction(async (tx) => {
       const created = await tx.student.create({
@@ -99,10 +139,10 @@ export async function registerStudent(input: RegistrationInput): Promise<Registr
           leetcodeUsername: profile.username,
           usernameKey: profile.username.toLowerCase(),
           joinedAt: now,
-          baselineTotalSolved: profile.totalSolved,
-          baselineEasySolved: profile.easySolved,
-          baselineMediumSolved: profile.mediumSolved,
-          baselineHardSolved: profile.hardSolved,
+          baselineTotalSolved: baseline.total,
+          baselineEasySolved: baseline.easy,
+          baselineMediumSolved: baseline.medium,
+          baselineHardSolved: baseline.hard,
           baselineCapturedAt: now,
           baselineLockedAt: lockBaseline ? now : null,
           lastFetchedAt: profile.fetchedAt,

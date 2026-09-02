@@ -88,7 +88,7 @@ function toDifficultyEnum(value: Difficulty): Difficulty {
  * Resolves difficulties for problem slugs, consulting the shared `Problem` cache first
  * so each problem is fetched from LeetCode once for the entire college.
  */
-async function resolveDifficulties(
+export async function resolveDifficulties(
   slugs: readonly string[],
   provider: LeetCodeProvider,
 ): Promise<Map<string, { title: string; difficulty: Difficulty }>> {
@@ -342,8 +342,19 @@ export async function syncStudent(
 
     // ---- Daily snapshot for today ----------------------------------------------
     if (phase === "ACTIVE") {
+      // Only snapshots that actually carry a cumulative reading may anchor the delta.
+      //
+      // The submission-calendar backfill below writes rows that hold nothing but a
+      // `submissions` count, leaving the cumulative columns at their zero default.
+      // Anchoring on one of those computed `today - 0`, which credited a student their
+      // entire lifetime total as a single day's work — a fake spike on the heatmap that
+      // also corrupted streaks, monthly totals and the "most active day".
       const previous = await tx.dailySnapshot.findFirst({
-        where: { studentId: student.id, date: { lt: dayKeyToDateColumn(todayKey) } },
+        where: {
+          studentId: student.id,
+          date: { lt: dayKeyToDateColumn(todayKey) },
+          totalSolved: { gt: 0 },
+        },
         orderBy: { date: "desc" },
         select: { totalSolved: true, easySolved: true, mediumSolved: true, hardSolved: true },
       });

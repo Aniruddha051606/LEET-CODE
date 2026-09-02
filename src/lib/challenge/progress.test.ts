@@ -4,6 +4,7 @@ import {
   filterWithinChallenge,
   progressFromBaseline,
   progressFromProblems,
+  rewindBaselineToChallengeStart,
   shouldLockBaseline,
   shouldRebaseBaseline,
 } from "./progress";
@@ -136,6 +137,49 @@ describe("duplicate problems", () => {
 
     expect(progress.total).toBe(1);
     expect(progress.points).toBe(0);
+  });
+});
+
+describe("registering after the challenge has started", () => {
+  it("credits challenge work done before the student registered", () => {
+    // The real case that prompted this: a student solved 1 easy, 2 medium and 1 hard on
+    // 1-2 September, then registered. Their lifetime count was 185 at that moment.
+    const lifetimeAtRegistration = { total: 185, easy: 54, medium: 109, hard: 22 };
+    const alreadySolvedInWindow = { easy: 1, medium: 2, hard: 1 };
+
+    const baseline = rewindBaselineToChallengeStart(lifetimeAtRegistration, alreadySolvedInWindow);
+    expect(baseline).toEqual({ total: 181, easy: 53, medium: 107, hard: 21 });
+
+    // Which means the work they had already done now counts.
+    const progress = progressFromBaseline(lifetimeAtRegistration, baseline, DEFAULT_SCORING);
+    expect(progress.total).toBe(4);
+    expect(progress).toMatchObject({ easy: 1, medium: 2, hard: 1 });
+    expect(progress.points).toBe(1 + 6 + 5);
+  });
+
+  it("leaves the baseline untouched for a student with no prior in-window work", () => {
+    const lifetime = { total: 15, easy: 4, medium: 8, hard: 3 };
+    const baseline = rewindBaselineToChallengeStart(lifetime, { easy: 0, medium: 0, hard: 0 });
+
+    expect(baseline).toEqual({ total: 15, easy: 4, medium: 8, hard: 3 });
+    expect(progressFromBaseline(lifetime, baseline, DEFAULT_SCORING).total).toBe(0);
+  });
+
+  it("never rewinds below zero", () => {
+    const lifetime = { total: 2, easy: 1, medium: 1, hard: 0 };
+    const baseline = rewindBaselineToChallengeStart(lifetime, { easy: 5, medium: 5, hard: 5 });
+
+    expect(baseline).toEqual({ total: 0, easy: 0, medium: 0, hard: 0 });
+    expect(progressFromBaseline(lifetime, baseline, DEFAULT_SCORING).total).toBe(2);
+  });
+
+  it("keeps the total consistent with the per-difficulty breakdown", () => {
+    // `total` can exceed easy+medium+hard when a difficulty is unresolved upstream.
+    const lifetime = { total: 100, easy: 40, medium: 40, hard: 15 };
+    const baseline = rewindBaselineToChallengeStart(lifetime, { easy: 2, medium: 3, hard: 1 });
+
+    expect(baseline.total).toBe(94);
+    expect(lifetime.total - baseline.total).toBe(6);
   });
 });
 

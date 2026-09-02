@@ -103,6 +103,48 @@ export function progressFromProblems(
 }
 
 /**
+ * Rewinds a baseline from "lifetime count at registration" to "lifetime count at the
+ * challenge start".
+ *
+ * Students do not all register on day one. Somebody who solved four problems on 1
+ * September and signed up on the 2nd would otherwise have those four folded into their
+ * baseline and lose them entirely — the challenge is supposed to measure work done
+ * during the window, not work done after signing a form.
+ *
+ * So we subtract the in-window problems we can see they had already solved. The result
+ * is an estimate of what their counter read when the challenge opened, which is exactly
+ * what `progressFromBaseline` wants.
+ *
+ * Two honest limitations:
+ *  - LeetCode publishes only the last ~20 accepted submissions, so work older than that
+ *    window cannot be recovered and still ends up in the baseline.
+ *  - That feed cannot distinguish a first solve from a re-solve of an older problem, so
+ *    a student who re-solved a pre-challenge problem during the window may be credited
+ *    once for it. Under-counting real work is the worse failure of the two.
+ */
+export function rewindBaselineToChallengeStart(
+  lifetimeAtRegistration: LifetimeStats,
+  alreadySolvedInWindow: DifficultyCounts,
+): Baseline {
+  const easy = atLeastZero(lifetimeAtRegistration.easy - alreadySolvedInWindow.easy);
+  const medium = atLeastZero(lifetimeAtRegistration.medium - alreadySolvedInWindow.medium);
+  const hard = atLeastZero(lifetimeAtRegistration.hard - alreadySolvedInWindow.hard);
+
+  return {
+    easy,
+    medium,
+    hard,
+    // Derived from the parts so the total can never disagree with the breakdown.
+    total: atLeastZero(
+      lifetimeAtRegistration.total -
+        (lifetimeAtRegistration.easy - easy) -
+        (lifetimeAtRegistration.medium - medium) -
+        (lifetimeAtRegistration.hard - hard),
+    ),
+  };
+}
+
+/**
  * Whether a baseline should be re-based rather than used.
  *
  * A student who registers before the challenge opens keeps getting their baseline moved
