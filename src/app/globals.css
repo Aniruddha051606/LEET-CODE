@@ -1,0 +1,211 @@
+@import "tailwindcss";
+
+/* Dark mode is driven by a class on <html>, set before paint by the inline script in
+   layout.tsx, so there is no flash of the wrong theme. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---------------------------------------------------------------------------
+   Design tokens.
+
+   One restrained palette: near-neutral greys carry the interface, a single indigo
+   accent carries action, and the three difficulty colours are the only other hues in
+   the product. Difficulty colours are reused verbatim in the charts and the heatmap so
+   that "green" means Easy everywhere, on every surface.
+   --------------------------------------------------------------------------- */
+:root {
+  --background: #fbfbfd;
+  --surface: #ffffff;
+  --surface-muted: #f4f4f7;
+  --surface-hover: #eeeef3;
+  --border: #e4e4ea;
+  --border-strong: #d3d3dc;
+
+  --foreground: #0a0a0f;
+  --foreground-muted: #61616d;
+  --foreground-subtle: #8b8b97;
+
+  --accent: #5b5bd6;
+  --accent-hover: #4c4cc4;
+  --accent-soft: #eeeefc;
+  --accent-foreground: #ffffff;
+
+  --easy: #0f9d58;
+  --medium: #d98218;
+  --hard: #dc3d43;
+
+  --easy-soft: #e6f6ed;
+  --medium-soft: #fdf1e0;
+  --hard-soft: #fdeaeb;
+
+  --gold: #c8951b;
+  --silver: #7d8590;
+  --bronze: #b05f2c;
+
+  --success: #0f9d58;
+  --danger: #dc3d43;
+  --warning: #d98218;
+
+  /* Heatmap ramp, low to high intensity. */
+  --heat-0: #ecedf1;
+  --heat-1: #c3e9d0;
+  --heat-2: #7fd3a2;
+  --heat-3: #38b073;
+  --heat-4: #14804a;
+
+  --ring: #5b5bd6;
+}
+
+.dark {
+  --background: #08080b;
+  --surface: #101015;
+  --surface-muted: #17171e;
+  --surface-hover: #1e1e26;
+  --border: #24242e;
+  --border-strong: #33333f;
+
+  --foreground: #f5f5f7;
+  --foreground-muted: #9b9baa;
+  --foreground-subtle: #6e6e7d;
+
+  --accent: #7b7bf0;
+  --accent-hover: #8f8ff5;
+  --accent-soft: #1b1b3a;
+  --accent-foreground: #ffffff;
+
+  --easy: #2fce74;
+  --medium: #f0a83a;
+  --hard: #ff6b70;
+
+  --easy-soft: #10281c;
+  --medium-soft: #2a1f0d;
+  --hard-soft: #2b1416;
+
+  --gold: #e0b341;
+  --silver: #a8b0bb;
+  --bronze: #cf854f;
+
+  --success: #2fce74;
+  --danger: #ff6b70;
+  --warning: #f0a83a;
+
+  --heat-0: #17171e;
+  --heat-1: #10391f;
+  --heat-2: #17663a;
+  --heat-3: #229556;
+  --heat-4: #2fce74;
+
+  --ring: #7b7bf0;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-surface-hover: var(--surface-hover);
+  --color-border-subtle: var(--border);
+  --color-border-strong: var(--border-strong);
+
+  --color-foreground: var(--foreground);
+  --color-muted: var(--foreground-muted);
+  --color-subtle: var(--foreground-subtle);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-foreground: var(--accent-foreground);
+
+  --color-easy: var(--easy);
+  --color-medium: var(--medium);
+  --color-hard: var(--hard);
+  --color-easy-soft: var(--easy-soft);
+  --color-medium-soft: var(--medium-soft);
+  --color-hard-soft: var(--hard-soft);
+
+  --color-gold: var(--gold);
+  --color-silver: var(--silver);
+  --color-bronze: var(--bronze);
+
+  --color-success: var(--success);
+  --color-danger: var(--danger);
+  --color-warning: var(--warning);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: var(--font-mono-family), ui-monospace, "SF Mono", "Cascadia Mono", monospace;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Large numeric statistics read better with tabular figures that do not jitter
+     as values change between renders. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background-color: var(--accent);
+    color: var(--accent-foreground);
+  }
+}
+
+@layer utilities {
+  /* A very restrained wash behind the hero. Not a "giant gradient". */
+  .hero-wash {
+    background-image:
+      radial-gradient(60rem 30rem at 50% -12rem, color-mix(in oklab, var(--accent) 14%, transparent), transparent 70%);
+  }
+
+  .divider-fade {
+    background-image: linear-gradient(90deg, transparent, var(--border), transparent);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* Entrance animation, used sparingly and only for above-the-fold hero content. */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.animate-rise {
+  animation: rise 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}

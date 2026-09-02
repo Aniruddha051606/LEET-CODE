@@ -1,0 +1,227 @@
+// College LeetCode 4-Month Challenge - data model
+//
+// Design note (read before changing anything here):
+// LeetCode's public GraphQL API exposes only the last ~20 accepted submissions per
+// user (verified: `recentAcSubmissionList` is hard-capped at 20 regardless of the
+// requested limit). Full solved-problem history is therefore NOT retrievable.
+//
+// Consequently challenge progress is derived from BASELINE-vs-CURRENT per-difficulty
+// deltas captured in `Student.baseline*` + `DailySnapshot`, which is authoritative and
+// inherently duplicate-proof (LeetCode's acSubmissionNum counts DISTINCT solved
+// problems). `SolvedProblem` rows are captured opportunistically from the rolling
+// 20-item window for the activity feed and problem-level detail.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum SyncStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum SyncTrigger {
+  CRON
+  ADMIN
+  REGISTRATION
+  MANUAL
+}
+
+model Student {
+  id   String @id @default(cuid())
+  name String
+
+  /// College-issued student ID. Unique across the challenge.
+  studentId String @unique
+
+  /// Canonical username as returned by LeetCode (preserves their casing).
+  leetcodeUsername String @unique
+  /// Lower-cased username used for all lookups and case-insensitive duplicate prevention.
+  usernameKey String @unique
+
+  joinedAt DateTime @default(now())
+  isActive Boolean  @default(true)
+
+  /// Marks rows created by the seed script. Seeding is refused in production.
+  isDemo Boolean @default(false)
+
+  // Baseline: lifetime stats at the moment the challenge started for this student.
+  // Challenge progress = current lifetime stats - baseline, so pre-challenge work never counts.
+  baselineTotalSolved  Int       @default(0)
+  baselineEasySolved   Int       @default(0)
+  baselineMediumSolved Int       @default(0)
+  baselineHardSolved   Int       @default(0)
+  baselineCapturedAt   DateTime?
+
+  /// Set on the first sync at or after the challenge start. Until then the baseline is
+  /// re-based on every sync, so an early registrant cannot bank pre-challenge solves.
+  baselineLockedAt DateTime?
+
+  // Denormalised standings. Recomputed server-side by the sync service only.
+  challengeSolved Int  @default(0)
+  challengeEasy   Int  @default(0)
+  challengeMedium Int  @default(0)
+  challengeHard   Int  @default(0)
+  challengePoints Int  @default(0)
+  currentStreak   Int  @default(0)
+  longestStreak   Int  @default(0)
+  rank            Int?
+  previousRank    Int?
+
+  // Sync bookkeeping
+  lastFetchedAt DateTime?
+  lastSyncedAt  DateTime?
+  syncStatus    SyncStatus @default(PENDING)
+  syncError     String?
+  retryCount    Int        @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  profile        LeetCodeProfile?
+  snapshots      DailySnapshot[]
+  solvedProblems SolvedProblem[]
+
+  /// Primary leaderboard ordering: problems solved during the challenge, then points.
+  @@index([isActive, challengeSolved(sort: Desc), challengePoints(sort: Desc)])
+  @@index([syncStatus, lastSyncedAt])
+  @@index([isDemo])
+}
+
+model LeetCodeProfile {
+  id        String  @id @default(cuid())
+  studentId String  @unique
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  profileUrl String
+  realName   String?
+  avatarUrl  String?
+
+  // Lifetime totals as reported by LeetCode. These are NOT challenge progress.
+  totalSolved      Int @default(0)
+  easySolved       Int @default(0)
+  mediumSolved     Int @default(0)
+  hardSolved       Int @default(0)
+  totalSubmissions Int @default(0)
+
+  ranking    Int?
+  reputation Int?
+
+  lastFetchedAt DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+/// One row per student per challenge day (Asia/Kolkata calendar day).
+/// The `*Solved` columns are cumulative lifetime values; `*Delta` is that day's gain.
+model DailySnapshot {
+  id        String  @id @default(cuid())
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  /// The Asia/Kolkata calendar day, stored as a date-only value.
+  date DateTime @db.Date
+
+  totalSolved  Int @default(0)
+  easySolved   Int @default(0)
+  mediumSolved Int @default(0)
+  hardSolved   Int @default(0)
+
+  /// Raw submission count for the day, taken from LeetCode's submission calendar.
+  submissions Int @default(0)
+
+  solvedDelta Int @default(0)
+  easyDelta   Int @default(0)
+  mediumDelta Int @default(0)
+  hardDelta   Int @default(0)
+
+  /// Cumulative challenge points as of the end of this day.
+  points Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Makes sync idempotent: re-running a sync updates the day, it never duplicates it.
+  @@unique([studentId, date])
+  @@index([date])
+  @@index([studentId, date(sort: Desc)])
+}
+
+/// Problem-level detail captured from the rolling 20-item recent-accepted window.
+/// Unique on (studentId, problemSlug) so re-solving a problem can never double count.
+model SolvedProblem {
+  id        String  @id @default(cuid())
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  problemSlug String
+  title       String
+  difficulty  Difficulty?
+
+  /// True submission time reported by LeetCode.
+  solvedAt DateTime
+  /// When our sync first observed it.
+  detectedAt DateTime @default(now())
+
+  submissionId String?
+
+  @@unique([studentId, problemSlug])
+  @@index([studentId, solvedAt(sort: Desc)])
+  @@index([solvedAt])
+}
+
+/// Shared slug to difficulty cache, so each problem is resolved from LeetCode once for
+/// the whole college rather than once per student.
+model Problem {
+  slug       String     @id
+  title      String
+  difficulty Difficulty
+  questionId String?
+  fetchedAt  DateTime   @default(now())
+}
+
+/// Singleton row (id = "default") holding the challenge window and scoring configuration.
+/// Scoring lives here so an admin can change it without touching leaderboard code.
+model ChallengeConfig {
+  id            String   @id @default("default")
+  challengeName String   @default("College LeetCode 4-Month Challenge")
+  startDate     DateTime
+  endDate       DateTime
+  timezone      String   @default("Asia/Kolkata")
+
+  easyPoints   Int @default(1)
+  mediumPoints Int @default(3)
+  hardPoints   Int @default(5)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Audit trail for synchronisation runs. Powers the admin sync-health panel.
+model SyncRun {
+  id         String      @id @default(cuid())
+  trigger    SyncTrigger
+  startedAt  DateTime    @default(now())
+  finishedAt DateTime?
+  durationMs Int?
+
+  totalStudents Int @default(0)
+  succeeded     Int @default(0)
+  failed        Int @default(0)
+
+  error String?
+
+  @@index([startedAt(sort: Desc)])
+}
