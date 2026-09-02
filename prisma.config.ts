@@ -1,4 +1,4 @@
-import { defineConfig, env } from "prisma/config";
+import { defineConfig } from "prisma/config";
 
 /**
  * Prisma 7 configuration.
@@ -15,13 +15,30 @@ import { defineConfig, env } from "prisma/config";
 try {
   process.loadEnvFile();
 } catch {
-  // No .env file: the environment is expected to provide DATABASE_URL directly.
+  // No .env file: the environment is expected to provide the URLs directly.
+}
+
+/**
+ * Migrations deliberately prefer `DIRECT_DATABASE_URL`.
+ *
+ * The application runs through a transaction-mode connection pooler, which is right for
+ * serverless but wrong for schema changes: DDL and Prisma's advisory locks need a single
+ * uninterrupted session. Point `DIRECT_DATABASE_URL` at the direct (or session-mode)
+ * endpoint and `DATABASE_URL` at the pooler. When only `DATABASE_URL` is set — the usual
+ * case for a plain local Postgres — both fall back to it.
+ */
+const migrationUrl = process.env.DIRECT_DATABASE_URL?.trim() || process.env.DATABASE_URL?.trim();
+
+if (!migrationUrl) {
+  throw new Error(
+    "Set DATABASE_URL (and optionally DIRECT_DATABASE_URL for migrations). See .env.example.",
+  );
 }
 
 export default defineConfig({
   schema: "prisma/schema.prisma",
   datasource: {
-    url: env("DATABASE_URL"),
+    url: migrationUrl,
   },
   migrations: {
     path: "prisma/migrations",

@@ -196,6 +196,31 @@ npm run db:studio     # browse the data
 
 A ready-to-apply initial migration is committed at `prisma/migrations/0_init/migration.sql`.
 
+### Supabase and serverless: use the pooler
+
+Supabase's direct endpoint, `db.<ref>.supabase.co`, publishes **only an AAAA (IPv6)
+record**. Vercel's functions have no outbound IPv6, so the app works perfectly on a
+developer machine and then fails in production with `P1001 Can't reach database server`.
+
+`DATABASE_URL` must therefore point at the **connection pooler**, which is IPv4:
+
+```
+postgresql://postgres.<ref>:PASSWORD@aws-0-<region>.pooler.supabase.com:6543/postgres
+```
+
+Two details are easy to miss: the username becomes `postgres.<project-ref>`, and the
+password still needs percent-encoding. Copy the exact string from the Supabase dashboard
+under *Connect → Transaction pooler*.
+
+`DIRECT_DATABASE_URL` then points at the direct endpoint and is used **only** by
+`prisma migrate`, which needs an uninterrupted session for DDL and advisory locks that a
+transaction-mode pooler cannot give it. Migrations run from your machine, which has IPv6,
+so that is fine. With a plain local Postgres, omit it and both fall back to `DATABASE_URL`.
+
+Transaction mode (port 6543) is the right choice for serverless and is verified to work
+with this app, interactive transactions and the raw ranking statement included. Session
+mode (5432 on the same pooler host) also works if you prefer it.
+
 ### Database TLS
 
 Hosted providers frequently serve a certificate signed by their own CA. Supabase's direct
