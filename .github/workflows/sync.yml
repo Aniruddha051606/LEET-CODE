@@ -1,0 +1,47 @@
+# Hourly LeetCode synchronisation.
+#
+# Vercel's Hobby plan permits only one cron run per day, which is too infrequent to
+# attribute solves to the right challenge day. GitHub Actions schedules are free and
+# unlimited, so the hourly refresh runs from here instead and simply calls the same
+# endpoint Vercel's cron would.
+#
+# Setup: add two repository secrets under
+#   Settings -> Secrets and variables -> Actions
+#     SYNC_URL     https://your-project.vercel.app/api/sync
+#     CRON_SECRET  the same value set in the Vercel environment
+#
+# Delete this workflow if you upgrade to Vercel Pro and enable the hourly cron there.
+
+name: Sync LeetCode stats
+
+on:
+  schedule:
+    # Hourly, on the hour (UTC). GitHub may delay runs under load; the sync is
+    # idempotent, so a late or repeated run changes nothing.
+    - cron: "0 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger synchronisation
+        run: |
+          if [ -z "${{ secrets.SYNC_URL }}" ] || [ -z "${{ secrets.CRON_SECRET }}" ]; then
+            echo "SYNC_URL or CRON_SECRET is not configured. See the comments in this file."
+            exit 1
+          fi
+
+          status=$(curl --silent --show-error --max-time 120 \
+            --output response.json --write-out '%{http_code}' \
+            --request POST "${{ secrets.SYNC_URL }}?limit=60" \
+            --header "Authorization: Bearer ${{ secrets.CRON_SECRET }}")
+
+          echo "HTTP $status"
+          cat response.json
+          echo
+
+          # A non-2xx response should fail the run so it surfaces in the Actions tab.
+          if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+            exit 1
+          fi

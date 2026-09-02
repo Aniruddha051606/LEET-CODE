@@ -467,10 +467,32 @@ change them:
   serverless instance opens its own pool, so a large value multiplied across concurrent
   instances exhausts the database's connection limit.
 
-On the **Hobby** plan cron jobs run **once per day** regardless of the schedule in
-`vercel.json`. That still works — students are simply refreshed daily rather than hourly.
-For hourly refreshes either upgrade to Pro, or drive the endpoint from any external
-scheduler with the same bearer token.
+### Scheduling the sync
+
+The **Hobby** plan permits **one cron run per day**, and it enforces this at deploy time:
+a more frequent expression is rejected with *"Hobby accounts are limited to daily cron
+jobs"* and the deployment fails. `vercel.json` therefore uses a daily schedule
+(`0 18 * * *`, which is 23:30 in Asia/Kolkata — late in the challenge day but safely
+before the midnight boundary, so each day's solves are attributed to that day).
+
+Daily alone is coarse: it refreshes only one batch every 24 hours. So the hourly refresh
+runs from **GitHub Actions** instead (`.github/workflows/sync.yml`), which is free and
+unrestricted, and simply calls the same endpoint with the same bearer token. Add two
+repository secrets under *Settings → Secrets and variables → Actions*:
+
+| Secret | Value |
+|---|---|
+| `SYNC_URL` | `https://your-project.vercel.app/api/sync` |
+| `CRON_SECRET` | the same value set in the Vercel environment |
+
+Because the sync is idempotent, the Vercel daily run and the hourly Actions run cannot
+conflict or double count. On Pro, enable the hourly cron in `vercel.json` and delete the
+workflow.
+
+**Batch sizing.** One student costs about three LeetCode requests, and the client-side
+limiter allows four per second, so a batch of 60 takes roughly 45 seconds — inside the
+60-second function ceiling with room to spare. Raise `limit` and `maxDuration` together,
+never one alone.
 
 ### Anywhere else
 
