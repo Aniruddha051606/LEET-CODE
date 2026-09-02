@@ -6,7 +6,9 @@ import { syncAllStudents } from "@/lib/services/sync";
 import { globalSyncSchema } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 300;
+// 60s is the Vercel Hobby ceiling and is valid on every plan. Raise to 300 on Pro if
+// you also raise the batch size in vercel.json.
+export const maxDuration = 60;
 
 /** POST /api/admin/sync — operator-triggered global refresh. */
 export async function POST(request: Request): Promise<NextResponse> {

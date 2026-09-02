@@ -444,11 +444,33 @@ npm test
 ### Vercel
 
 1. Import the repository.
-2. Set the environment variables from `.env.example` (at minimum `DATABASE_URL`,
-   `ADMIN_PASSWORD_HASH`, `ADMIN_SESSION_SECRET`, `CRON_SECRET`).
-3. Deploy. `vercel.json` registers the hourly cron for `/api/sync`; Vercel sends `CRON_SECRET` as a
+2. Set the environment variables from `.env.example` — at minimum `DATABASE_URL`,
+   `DATABASE_CA_CERT_PATH`, `ADMIN_PASSWORD_HASH`, `ADMIN_SESSION_SECRET`, `CRON_SECRET`.
+3. Run `npm run db:deploy` once against the production database.
+4. Deploy. `vercel.json` registers the cron for `/api/sync`; Vercel sends `CRON_SECRET` as a
    bearer token automatically.
-4. Run `npm run db:deploy` against the production database (or add it as the build command).
+
+Four things are already configured for serverless, and are worth understanding before you
+change them:
+
+- **The CA certificate is bundled explicitly.** `outputFileTracingIncludes` in
+  `next.config.ts` copies `certs/**` into the function, because Next's tracer cannot
+  follow a dynamic `readFileSync` and the database connection would otherwise fail in
+  production but work locally. If you would rather not ship the file, put the PEM in the
+  `DATABASE_CA_CERT` environment variable instead.
+- **`maxDuration` is 60 seconds**, the Hobby ceiling. Setting a value above your plan's
+  limit makes the deployment fail, so this is the value that works everywhere.
+- **The cron batch is capped at 60 students** (`/api/sync?limit=60`) so a run finishes
+  inside those 60 seconds at the default rate limit. Raise the limit and `maxDuration`
+  together on Pro.
+- **The pool is 3 connections per instance in production** (`DATABASE_POOL_MAX`). Every
+  serverless instance opens its own pool, so a large value multiplied across concurrent
+  instances exhausts the database's connection limit.
+
+On the **Hobby** plan cron jobs run **once per day** regardless of the schedule in
+`vercel.json`. That still works — students are simply refreshed daily rather than hourly.
+For hourly refreshes either upgrade to Pro, or drive the endpoint from any external
+scheduler with the same bearer token.
 
 ### Anywhere else
 

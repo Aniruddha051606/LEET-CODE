@@ -59,9 +59,10 @@ const createClient = (): PrismaClient => {
   const adapter = new PrismaPg({
     connectionString: env.databaseUrl,
     ...(ssl ? { ssl } : {}),
-    // Comfortably below the connection limits of hosted Postgres free tiers while still
-    // allowing the leaderboard and sync to work concurrently.
-    max: 10,
+    // Each serverless instance opens its own pool, so a large value multiplied by many
+    // concurrent instances exhausts the database's connection limit. Small per instance
+    // is the right default in production; generous locally where there is only one.
+    max: env.databasePoolMax,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 10_000,
   });

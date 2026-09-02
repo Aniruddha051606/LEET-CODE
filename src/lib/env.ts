@@ -51,6 +51,14 @@ export const env = {
   get databaseCaCertPath(): string | undefined {
     return readOptional("DATABASE_CA_CERT_PATH");
   },
+  /**
+   * Connections per pool. Serverless runs many instances, each with its own pool, so
+   * this stays small in production and generous in local development.
+   */
+  get databasePoolMax(): number {
+    return readInt("DATABASE_POOL_MAX", isProduction ? 3 : 10);
+  },
+
   /** Explicit, deliberate opt-out of certificate verification. */
   get databaseSslNoVerify(): boolean {
     return readOptional("DATABASE_SSL_NO_VERIFY") === "true";
