@@ -13,12 +13,19 @@ import {
   maxDayKey,
   toDayKey,
 } from "@/lib/challenge/dates";
-import { progressFromBaseline, shouldLockBaseline, shouldRebaseBaseline } from "@/lib/challenge/progress";
+import {
+  progressFromBaseline,
+  shouldLockBaseline,
+  shouldRebaseBaseline,
+  withPreRegistrationCredit,
+} from "@/lib/challenge/progress";
+import { tallyDifficulties } from "@/lib/challenge/scoring";
 
 import { computeStreaks } from "@/lib/challenge/streak";
 import type {
   ActivityDay,
   Baseline,
+  DifficultyCounts,
   ChallengeSettings,
   DayKey,
   Difficulty,
@@ -134,6 +141,7 @@ export async function resolveDifficulties(
 
 interface StudentRow {
   id: string;
+  baselineCapturedAt: Date | null;
   leetcodeUsername: string;
   isActive: boolean;
   isDemo: boolean;
@@ -147,6 +155,7 @@ interface StudentRow {
 
 const STUDENT_SELECT = {
   id: true,
+  baselineCapturedAt: true,
   leetcodeUsername: true,
   isActive: true,
   isDemo: true,
@@ -273,6 +282,21 @@ export async function syncStudent(
     inWindowProblems.map((item) => item.problemSlug),
     provider,
   );
+
+  // ---- Credit for challenge work done before the student registered -------------
+  // The baseline is the lifetime count at sign-up, so for anyone who joined after day one
+  // it already contains the problems they had solved earlier in the window. Those are
+  // added back as a credit.
+  //
+  // The credit is RECOMPUTED from stored `SolvedProblem` rows on every sync rather than
+  // being folded into the baseline once. That distinction matters: mutating the baseline
+  // is a one-way operation that double-subtracts if it ever runs twice — which is exactly
+  // what happened when an earlier version applied it during registration and the sync
+  // then applied it again. Deriving the number fresh each time cannot drift, and
+  // self-corrects if a problem is detected late.
+  const capturedAt = student.baselineCapturedAt;
+  const creditsPreRegistrationWork =
+    phase === "ACTIVE" && !rebase && capturedAt !== null && capturedAt > settings.startDate;
 
   // ---- Submission calendar (heatmap detail) ------------------------------------
   const calendarDays = await fetchCalendarDays(student, settings, provider, now);
@@ -434,7 +458,26 @@ export async function syncStudent(
       effective = { total: baseline.total, easy: baseline.easy, medium: baseline.medium, hard: baseline.hard };
     }
 
-    const progress = progressFromBaseline(effective, baseline, scoring);
+    // Distinct in-window problems this student had already solved when they registered.
+    // Recomputed every sync from stored rows, so it is a pure function of the data and
+    // can never accumulate.
+    let credit: DifficultyCounts = { easy: 0, medium: 0, hard: 0 };
+    if (creditsPreRegistrationWork && capturedAt !== null) {
+      const earlier = await tx.solvedProblem.findMany({
+        where: {
+          studentId: student.id,
+          solvedAt: { gte: settings.startDate, lt: capturedAt },
+        },
+        select: { difficulty: true },
+      });
+      credit = tallyDifficulties(earlier.map((row) => row.difficulty));
+    }
+
+    const progress = withPreRegistrationCredit(
+      progressFromBaseline(effective, baseline, scoring),
+      credit,
+      scoring,
+    );
 
     const activity: ActivityDay[] = snapshots.map((snapshot) => ({
       day: dateColumnToDayKey(snapshot.date),

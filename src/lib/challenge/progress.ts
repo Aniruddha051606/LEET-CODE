@@ -122,6 +122,24 @@ export function progressFromProblems(
  *    a student who re-solved a pre-challenge problem during the window may be credited
  *    once for it. Under-counting real work is the worse failure of the two.
  */
+export function withPreRegistrationCredit(
+  progress: ChallengeProgress,
+  credit: DifficultyCounts,
+  scoring: ScoringConfig,
+): ChallengeProgress {
+  const counts: DifficultyCounts = {
+    easy: progress.easy + credit.easy,
+    medium: progress.medium + credit.medium,
+    hard: progress.hard + credit.hard,
+  };
+
+  return {
+    ...counts,
+    total: counts.easy + counts.medium + counts.hard,
+    points: computePoints(counts, scoring),
+  };
+}
+
 export function rewindBaselineToChallengeStart(
   lifetimeAtRegistration: LifetimeStats,
   alreadySolvedInWindow: DifficultyCounts,

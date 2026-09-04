@@ -5,6 +5,7 @@ import {
   progressFromBaseline,
   progressFromProblems,
   rewindBaselineToChallengeStart,
+  withPreRegistrationCredit,
   shouldLockBaseline,
   shouldRebaseBaseline,
 } from "./progress";
@@ -180,6 +181,37 @@ describe("registering after the challenge has started", () => {
 
     expect(baseline.total).toBe(94);
     expect(lifetime.total - baseline.total).toBe(6);
+  });
+});
+
+describe("pre-registration credit", () => {
+  const baseline = { total: 185, easy: 54, medium: 109, hard: 22 };
+  const current = { total: 187, easy: 55, medium: 110, hard: 22 };
+  const credit = { easy: 1, medium: 2, hard: 1 };
+
+  it("adds work done before registering on top of work done since", () => {
+    const since = progressFromBaseline(current, baseline, DEFAULT_SCORING);
+    expect(since.total).toBe(2);
+
+    const total = withPreRegistrationCredit(since, credit, DEFAULT_SCORING);
+    expect(total).toMatchObject({ easy: 2, medium: 3, hard: 1, total: 6 });
+    expect(total.points).toBe(2 * 1 + 3 * 3 + 1 * 5);
+  });
+
+  it("is a pure function of its inputs, so re-applying cannot inflate a score", () => {
+    // The bug this replaced folded the credit into the stored baseline, which
+    // double-counted when it ran twice. Recomputing from the same inputs must be stable.
+    const since = progressFromBaseline(current, baseline, DEFAULT_SCORING);
+    const once = withPreRegistrationCredit(since, credit, DEFAULT_SCORING);
+    const twice = withPreRegistrationCredit(since, credit, DEFAULT_SCORING);
+    expect(twice).toEqual(once);
+  });
+
+  it("changes nothing when there is no prior work", () => {
+    const since = progressFromBaseline(current, baseline, DEFAULT_SCORING);
+    expect(withPreRegistrationCredit(since, { easy: 0, medium: 0, hard: 0 }, DEFAULT_SCORING)).toEqual(
+      since,
+    );
   });
 });
 

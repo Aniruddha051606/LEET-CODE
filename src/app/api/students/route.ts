@@ -6,6 +6,9 @@ import { registerStudent } from "@/lib/services/registration";
 import { registrationSchema } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
+// Registration verifies the profile with LeetCode and then runs the first sync for that
+// student. Without this the Vercel default cuts it short and the student is left on zero.
+export const maxDuration = 60;
 
 /**
  * POST /api/students — join the challenge.
