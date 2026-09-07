@@ -519,6 +519,9 @@ export async function syncStudent(
       challengePoints: progress.points,
       newProblems,
     };
+  }, {
+    maxWait: 10000,
+    timeout: 20000,
   });
 
   return {
@@ -694,4 +697,3 @@ export async function syncStudentAndRerank(studentId: string): Promise<StudentSy
   }
   return result;
 }
-
